@@ -38,6 +38,18 @@ func (p *Image) At(x, y int) color.Color {
 	return p.RGBAAt(x, y)
 }
 
+func (p *Image) SetRGB(x, y int, c RGB) {
+	if !(image.Point{x, y}.In(p.Rect)) {
+		return
+	}
+
+	i := (y-p.Rect.Min.Y)*p.Stride + (x-p.Rect.Min.X)*3
+	s := p.Pix[i : i+3 : i+3] // Small cap improves performance, see https://golang.org/issue/27857
+	s[0] = c.R
+	s[1] = c.G
+	s[2] = c.B
+}
+
 // RGBAAt returns the color of the pixel at (x, y) as RGBA.
 func (p *Image) RGBAAt(x, y int) color.RGBA {
 	if !(image.Point{x, y}.In(p.Rect)) {

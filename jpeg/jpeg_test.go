@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/stapelberg/turbojpeg/jpeg"
+	"github.com/stapelberg/turbojpeg/rgb"
 	"github.com/stapelberg/turbojpeg/test/util"
 )
 
@@ -396,6 +397,19 @@ func newRGBA() *image.RGBA {
 	return rgba
 }
 
+func newRGB() *rgb.Image {
+	img := rgb.NewImage(image.Rect(0, 0, 4, 17))
+	for i := 0; i < 4; i++ {
+		for j := 0; j < 4; j++ {
+			img.SetRGB(i, j, rgb.RGB{255, 0, 0})
+		}
+		for j := 4; j < 17; j++ {
+			img.SetRGB(i, j, rgb.RGB{0, 0, 255})
+		}
+	}
+	return img
+}
+
 func TestEncodeRGBA(t *testing.T) {
 	rgba := newRGBA()
 	w := bytes.NewBuffer(nil)
@@ -418,6 +432,115 @@ func TestEncodeRGBA(t *testing.T) {
 		util.WritePNG(rgba, "TestEncodeRGBA.want.png")
 		util.WritePNG(decoded, "TestEncodeRGBA.got.png")
 		util.WritePNG(diff, "TestEncodeRGBA.diff.png")
+	}
+}
+
+func TestRGBEncodePixels(t *testing.T) {
+	rgb := newRGB()
+	w := bytes.NewBuffer(nil)
+
+	enc, err := jpeg.NewRGBEncoder(w, &jpeg.EncoderOptions{
+		Quality: 100,
+	}, rgb.Bounds().Dx(), rgb.Bounds().Dy())
+	if err != nil {
+		t.Fatalf("failed to encode: %v", err)
+	}
+	total := len(rgb.Pix)
+	for offset := 0; offset < total; {
+		chunk := 1
+		if remaining := (total - offset) / rgb.Stride; remaining > 16 {
+			chunk = 16
+		}
+		enc.EncodePixels(rgb.Pix[offset:], chunk)
+		offset += rgb.Stride * chunk
+	}
+	if err := enc.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	decoded, err := jpeg.Decode(w, &jpeg.DecoderOptions{})
+	if err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+
+	diff, err := util.MatchImage(rgb, decoded, 1)
+	if err != nil {
+		t.Errorf("match image: %v", err)
+		util.WritePNG(rgb, "TestEncodeRGB.want.png")
+		util.WritePNG(decoded, "TestEncodeRGB.got.png")
+		util.WritePNG(diff, "TestEncodeRGB.diff.png")
+	}
+}
+
+func scanTestdata(t testing.TB) (image.Image, *rgb.Image) {
+	t.Helper()
+
+	jpgBytes, err := ioutil.ReadFile("testdata/zoidberg.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := nativeJPEG.Decode(bytes.NewReader(jpgBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := rgb.NewImage(img.Bounds())
+	for y := 0; y < img.Bounds().Dy(); y++ {
+		for x := 0; x < img.Bounds().Dx(); x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			i.SetRGB(x, y, rgb.RGB{
+				R: uint8(r >> 8),
+				G: uint8(g >> 8),
+				B: uint8(b >> 8),
+			})
+		}
+	}
+	return img, i
+}
+
+func BenchmarkNativeJPEG(b *testing.B) {
+	img, i := scanTestdata(b)
+
+	b.SetBytes(int64(len(i.Pix)))
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		var buf bytes.Buffer
+		if err := nativeJPEG.Encode(&buf, img, &nativeJPEG.Options{
+			Quality: 75,
+		}); err != nil {
+			b.Fatalf("failed to encode: %v", err)
+		}
+	}
+}
+
+func BenchmarkRGBEncodePixels(b *testing.B) {
+	_, i := scanTestdata(b)
+
+	b.SetBytes(int64(len(i.Pix)))
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		var buf bytes.Buffer
+		enc, err := jpeg.NewRGBEncoder(&buf, &jpeg.EncoderOptions{
+			Quality: 75,
+		}, i.Bounds().Dx(), i.Bounds().Dy())
+		if err != nil {
+			b.Fatalf("failed to encode: %v", err)
+		}
+		total := len(i.Pix)
+		for offset := 0; offset < total; {
+			chunk := 1
+			if remaining := (total - offset) / i.Stride; remaining > 16 {
+				chunk = 16
+			}
+			enc.EncodePixels(i.Pix[offset:], chunk)
+			offset += i.Stride * chunk
+		}
+		if err := enc.Flush(); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

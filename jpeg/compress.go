@@ -221,6 +221,77 @@ func writeMCUYCbCr(cinfo *C.struct_jpeg_compress_struct, y, cb, cr C.JSAMPROW, y
 	return
 }
 
+type Encoder struct {
+	cinfo       *C.struct_jpeg_compress_struct
+	stride      int
+	rowPointers [16]*uint8
+}
+
+func NewRGBEncoder(w io.Writer, opt *EncoderOptions, width, height int) (*Encoder, error) {
+	cinfo, err := newCompress(w)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set up compression parameters
+	cinfo.image_width = C.JDIMENSION(width)
+	cinfo.image_height = C.JDIMENSION(height)
+	cinfo.input_components = 3
+	cinfo.in_color_space = C.JCS_RGB
+
+	setupEncoderOptions(cinfo, opt)
+
+	if err := startCompress(cinfo); err != nil {
+		return nil, err
+	}
+
+	return &Encoder{
+		cinfo:  cinfo,
+		stride: 3 * width,
+	}, nil
+}
+
+func (e *Encoder) EncodePixels(pix []uint8, lines int) error {
+	for v := 0; v < lines; {
+		e.rowPointers = [16]*uint8{
+			&pix[v*e.stride],
+		}
+		height := 1
+		if lines-v >= 16 {
+			height = 16
+			e.rowPointers = [16]*uint8{
+				&pix[(v+0)*e.stride],
+				&pix[(v+1)*e.stride],
+				&pix[(v+2)*e.stride],
+				&pix[(v+3)*e.stride],
+				&pix[(v+4)*e.stride],
+				&pix[(v+5)*e.stride],
+				&pix[(v+6)*e.stride],
+				&pix[(v+7)*e.stride],
+				&pix[(v+8)*e.stride],
+				&pix[(v+9)*e.stride],
+				&pix[(v+10)*e.stride],
+				&pix[(v+11)*e.stride],
+				&pix[(v+12)*e.stride],
+				&pix[(v+13)*e.stride],
+				&pix[(v+14)*e.stride],
+				&pix[(v+15)*e.stride],
+			}
+		}
+		encoded, err := writeScanline(e.cinfo, C.JSAMPROW(unsafe.Pointer(&e.rowPointers[0])), C.JDIMENSION(height))
+		if err != nil {
+			return err
+		}
+		v += encoded
+	}
+	return nil
+}
+
+func (e *Encoder) Flush() error {
+	defer destroyCompress(e.cinfo)
+	return finishCompress(e.cinfo)
+}
+
 // Encode encodes src image and writes into w as JPEG format data.
 func Encode(w io.Writer, src image.Image, opt *EncoderOptions) (err error) {
 	var cinfo *C.struct_jpeg_compress_struct
