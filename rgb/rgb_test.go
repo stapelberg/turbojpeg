@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/pixiv/go-libjpeg/rgb"
+	"github.com/stapelberg/turbojpeg/rgb"
 )
 
 func TestImageInterface(t *testing.T) {
