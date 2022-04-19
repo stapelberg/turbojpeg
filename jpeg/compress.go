@@ -45,7 +45,7 @@ static JDIMENSION write_scanlines(j_compress_ptr cinfo, JSAMPROW row, JDIMENSION
 	}
 
 	*msg_code = 0;
-	return jpeg_write_scanlines(cinfo, &row, max_lines);
+	return jpeg_write_scanlines(cinfo, (JSAMPARRAY)row, max_lines);
 }
 
 static JDIMENSION write_mcu_gray(struct jpeg_compress_struct *cinfo, JSAMPROW pix, int stride, int *msg_code) {
@@ -345,7 +345,10 @@ func encodeRGBA(cinfo *C.struct_jpeg_compress_struct, src *image.RGBA, p *Encode
 	}()
 
 	for v := 0; v < h; {
-		line, err := writeScanline(cinfo, C.JSAMPROW(unsafe.Pointer(&src.Pix[v*src.Stride])), C.JDIMENSION(1))
+		row_pointer := [...]*uint8{
+			&src.Pix[v*src.Stride],
+		}
+		line, err := writeScanline(cinfo, C.JSAMPROW(unsafe.Pointer(&row_pointer[0])), C.JDIMENSION(1))
 		if err != nil {
 			return err
 		}
@@ -378,7 +381,11 @@ func encodeRGB(cinfo *C.struct_jpeg_compress_struct, src *rgb.Image, p *EncoderO
 	}()
 
 	for v := 0; v < h; {
-		line, err := writeScanline(cinfo, C.JSAMPROW(unsafe.Pointer(&src.Pix[v*src.Stride])), C.JDIMENSION(1))
+		row_pointer := [...]*uint8{
+			&src.Pix[v*src.Stride],
+		}
+
+		line, err := writeScanline(cinfo, C.JSAMPROW(unsafe.Pointer(&row_pointer[0])), C.JDIMENSION(1))
 		if err != nil {
 			return err
 		}
