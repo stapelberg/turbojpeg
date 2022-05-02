@@ -1,6 +1,7 @@
 package jpeg
 
 /*
+#cgo CFLAGS: -I.
 #include <stdio.h>
 #include <stdlib.h>
 #include "jpeglib.h"
